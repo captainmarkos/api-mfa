@@ -6,6 +6,12 @@ Rails.application.routes.draw do
 
   resources :api_keys, path: '/api-keys', only: [:index, :create, :destroy]
 
+  namespace :api do
+    namespace :v1 do
+      resources :api_keys, path: '/api-keys', only: [:index, :create, :destroy]
+    end
+  end
+
   #get '/api-keys', to: 'api_keys#index'
   #post '/api-keys', to: 'api_keys#create'
   #delete '/api-keys', to: 'api_keys#destroy'

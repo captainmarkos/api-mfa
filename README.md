@@ -768,13 +768,115 @@ This is my implementation based (closely) off of [this tutorial](https://keygen.
 
 ## Part 2
 
-### Creating a Second Factor Table
+### Before Getting Started
 
-First let's start off with some definitions which most are obvious but no assumptions.
+Before we get started, let's start off with some definitions which most are obvious but no assumptions.
 
 - 2FA : 2 Factor Authentication
 - MFA : Multi Factor Authentication
 - OTP : One Time Password
 - TOTP : Time-based One Time Password
 - ROTP : Ruby One Time Password - [https://github.com/mdp/rotp](https://github.com/mdp/rotp)
+
+
+Next let add api versioning to our app.  The directory structure change is the following
+
+```bash
+# create directories
+mkdir app/controllers/api
+mkdir app/controllers/api/v1
+
+# move the code
+mv app/controllers/api_keys_controller.rb app/controllers/api/v1/
+
+```
+
+Make a `app/controllers/api/api_base_controller.rb` and make it look like
+
+```ruby
+class Api::ApiBaseController < ApplicationController
+end
+```
+
+Edit `app/controllers/api/v1/api_keys_controller.rb` to have
+
+```ruby
+class Api::V1::ApiKeysController < Api::ApiBaseController
+  include ApiKeyAuthenticatable
+
+  ...
+
+end
+```
+
+
+Make the `config/routes.rb` like
+
+```ruby
+Rails.application.routes.draw do
+
+  ...
+
+  namespace :api do
+    namespace :v1 do
+      resources :api_keys, path: '/api-keys', only: [:index, :create, :destroy]
+    end
+  end
+end
+```
+
+Smoke test it.  Start the rails server and let's hit with `curl` (remember the seed data in `db/seeds.rb`).
+
+```bash
+# create an api key for this user
+#
+curl -v -X POST http://localhost:3333/api/v1/api-keys -u foo@woohoo.com:topsecret
+< HTTP/1.1 201 Created
+{
+  "id": 4,
+  "bearer_type": "User",
+  "bearer_id": 1,
+  "created_at": "2022-07-17T17:47:49.954Z",
+  "updated_at": "2022-07-17T17:47:49.954Z",
+  "token": "495e74d76ec5f7d7b7385796eea26fde"
+}
+
+# use the token to GET all api_keys records
+#
+curl -v -X GET http://localhost:3333/api/v1/api-keys -H 'Authorization: Bearer 495e74d76ec5f7d7b7385796eea26fde'
+< HTTP/1.1 200 OK
+[
+   {
+      "bearer_id" : 1,
+      "bearer_type" : "User",
+      "created_at" : "2022-07-17T17:47:14.496Z",
+      "id" : 1,
+      "updated_at" : "2022-07-17T17:47:14.496Z"
+   },
+   {
+      "bearer_id" : 1,
+      "bearer_type" : "User",
+      "created_at" : "2022-07-17T17:47:49.954Z",
+      "id" : 4,
+      "updated_at" : "2022-07-17T17:47:49.954Z"
+   }
+]
+
+# use the token to DELETE an api_keys record by id
+#
+curl -v -X DELETE http://localhost:3333/api/v1/api-keys/4 -H 'Authorization: Bearer 495e74d76ec5f7d7b7385796eea26fde'
+< HTTP/1.1 200 OK
+
+{
+  "status": "success",
+  "message": "deleted id 4"
+}
+```
+
+
+### Creating a Second Factor Table
+
+
+
+
 

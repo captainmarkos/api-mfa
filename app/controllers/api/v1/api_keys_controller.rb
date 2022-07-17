@@ -1,4 +1,4 @@
-class ApiKeysController < ApplicationController
+class Api::V1::ApiKeysController < Api::ApiBaseController
   include ApiKeyAuthenticatable
 
   # Require API key authentication
@@ -24,5 +24,14 @@ class ApiKeysController < ApplicationController
     api_key = current_bearer.api_keys.find(params[:id])
 
     api_key.destroy
+    render json: {
+      status: 'success',
+      message: "deleted id #{params[:id]}",
+    }
+  rescue ActiveRecord::RecordNotFound => e
+    render json: {
+      status: "failed to delete id #{params[:id]}",
+      message: "#{e.message}"
+    }
   end
 end
