@@ -1,6 +1,17 @@
 ## API Auth Key with 2FA
 
 **[Part 1](#part-1)** we implement API key authentication without using Devise.  When it comes to authentication, Ruby on Rails is a batteries-included framework. Devise is over-kill for an API.
+- [Create App and Setup](#create-app-and-setup)
+- [Create a User Model](#create-a-user-model)
+- [Create an API Key Model](#create-an-api-key-model)
+- [Create Seed Data](#create-seed-data)
+- [Routes for API Key Authentication](#routes-for-api-key-authentication)
+- [Create a Concern for API Key Authentication](#create-a-concern-for-api-key-authentication)
+- [Controlling API Key Authentication](#controlling-api-key-authentication)
+- [Create an API Key](#create-an-api-key)
+- [Listing API Keys](#listing-api-keys)
+- [Revoking API Keys](#revoking-api-keys)
+- [Patching Vulnerabilities](#patching-vulnerabilities)
 
 **[Part 2](#part-2)** we are going to add 2FA into the app authentication flow.  We will cover how to implement a flexible second factor model which can be extended to support other types of second factors such as backup codes and U2F hardwardware keys.
 
@@ -218,7 +229,7 @@ bin/rails console
 ```
 
 
-### Routes For API Key Authentication
+### Routes for API Key Authentication
 
 Let's setup some routes:
 
@@ -240,7 +251,7 @@ end
 ```
 
 
-### Create an API Key Auth Concern
+### Create a Concern for API Key Authentication
 
 Create a typical Rails concern that allows controllers to require API key authentication `app/controllers/concerns/api_key_authenticatable.rb`.
 
@@ -770,7 +781,7 @@ This is my implementation based (closely) off of [this tutorial](https://keygen.
 
 ### Before Getting Started
 
-Before we get started, let's start off with some definitions which most are obvious but no assumptions.
+Let's start off with some definitions which most are obvious but no assumptions.
 
 - 2FA : 2 Factor Authentication
 - MFA : Multi Factor Authentication
@@ -779,7 +790,7 @@ Before we get started, let's start off with some definitions which most are obvi
 - ROTP : Ruby One Time Password - [https://github.com/mdp/rotp](https://github.com/mdp/rotp)
 
 
-Next let add api versioning to our app.  The directory structure change is the following
+Next let's add api versioning to our app.  The directory structure change is the following
 
 ```bash
 # create directories
@@ -791,7 +802,7 @@ mv app/controllers/api_keys_controller.rb app/controllers/api/v1/
 
 ```
 
-Make a `app/controllers/api/api_base_controller.rb` and make it look like
+Create a new file `app/controllers/api/api_base_controller.rb` and make it look like
 
 ```ruby
 class Api::ApiBaseController < ApplicationController
