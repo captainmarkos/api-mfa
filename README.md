@@ -1085,10 +1085,10 @@ Kabam!  Notice the `otp_secret`.  Now we need to get that value into our TOTP au
 ### Ruby Fun
 
 ```ruby
-# some_string = "This is my stance, but it's not a good one."
-# transformed = "sihT si ym ecnats, tub s'ti ton a doog eno."
-#
-# got = some_string.split.map { |i| i.gsub(/[a-zA-Z']+/, &:reverse) }.join(' ')
-#
-# got == transformed
+some_string = "This is my stance, but it's not a good one."
+transformed = "sihT si ym ecnats, tub s'ti ton a doog eno."
+
+got = some_string.split.map { |i| i.gsub(/[a-zA-Z']+/, &:reverse) }.join(' ')
+
+got == transformed
 ```
