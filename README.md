@@ -1043,7 +1043,7 @@ end
 
 The first method will be used to check if the user has a second factor enabled, and the second method will let us authenticate a user's enabled second factor. To test it out, we'll go ahead and generate an API key so we can make a few subsequent requests.
 
-```json
+```bash
 curl -X POST http://localhost:3333/api/v1/api-keys -u foo@woohoo.com:topsecret | json_pp
 
 {
@@ -1060,7 +1060,7 @@ The [`json_pp` gem](https://rubygems.org/gems/json_pp/versions/0.0.1) I use for 
 
 Next, let's use that `token` to add a second factor for the current_user.  The `Api::V1::SecondFactorsController`  requires a password if a second factor has not been added yet.  We adjust our request to inclue the user's `password`.
 
-```json
+```bash
 curl -X POST http://localhost:3333/api/v1/second-factors \
      -H 'Authorization: Bearer 079ce807b0736d5aefa345754c889c71' \
      -d password=topsecret | json_pp
