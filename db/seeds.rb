@@ -6,3 +6,6 @@ emails.each do |email|
   user = User.create!(email: email, password: 'topsecret')
   user.api_keys.create!(token: SecureRandom.hex)
 end
+
+puts " "
+puts "--> Total users created: #{emails.length}"

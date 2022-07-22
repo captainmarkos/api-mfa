@@ -1,6 +1,7 @@
 ## API Auth Key with 2FA
 
 **[Part 1](#part-1)** we implement API key authentication without using Devise.  When it comes to authentication, Ruby on Rails is a batteries-included framework. Devise is over-kill for an API.
+
 - [Create App and Setup](#create-app-and-setup)
 - [Create a User Model](#create-a-user-model)
 - [Create an API Key Model](#create-an-api-key-model)
@@ -15,11 +16,14 @@
 
 **[Part 2](#part-2)** we are going to add 2FA into the app authentication flow.  We will cover how to implement a flexible second factor model which can be extended to support other types of second factors such as backup codes and U2F hardwardware keys.
 
+- [Before Getting Started](#before-getting-started)
+- [Creating a Second Factor Table](#creating-a-second-factor-table)
+- [Managing Second Factors](#managing-second-factors)
 
 ### Create App and Setup
 
 ```bash
-rails new otp2fa-auth --api --database sqlite3 --skip-active-storage --skip-action-cable --skip-test
+rails new api-mfa --api --database sqlite3 --skip-active-storage --skip-action-cable --skip-test
 ```
 
 
@@ -885,9 +889,206 @@ curl -v -X DELETE http://localhost:3333/api/v1/api-keys/4 -H 'Authorization: Bea
 ```
 
 
-### Creating a Second Factor Table
+### Creating a Second Factor Model
+
+```bash
+bin/rails generate migration CreateSecondFactors
+      invoke  active_record
+      create    db/migrate/20220717200348_create_second_factors.rb
+```
+
+The migration
+
+```ruby
+class CreateSecondFactors < ActiveRecord::Migration[7.0]
+  def change
+    create_table :second_factors do |t|
+      t.references :user, null: false
+      t.text :otp_secret, null: false, index: { unique: true }
+      t.boolean :enabled, null: false, default: false
+      t.timestamps
+    end
+  end
+end
+```
+
+Now apply the migration with `bin/rails db:migrate`.
+
+We now need to add the [rotp](https://github.com/mdp/rotp/) gem to the `Gemfile` and install.
+
+Create the model `app/models/second_factor.rb`
+
+```ruby
+class SecondFactor < ApplicationRecord
+  OTP_ISSUER = 'keygen.example'
+
+  belongs_to :user
+
+  before_create :generate_otp_secret
+
+  validates :user, presence: true
+
+  scope :enabled, -> { where(enabled: true) }
+
+  def verify_with_otp(otp)
+    totp = ROTP::TOTP.new(otp_secret, issuer: OTP_ISSUER)
+
+    totp.verify(otp.to_s)
+  end
+
+  private
+
+  def generate_otp_secret
+    self.otp_secret = ROTP::Base32.random
+  end
+end
+```
+
+Update the `User` model.
+
+```ruby
+class User < ApplicationRecord
+  ...
+  has_many :second_factors
+  ...
+end
+```
+
+
+### Managing Second Factors
+
+Add new routes for second factors to `config/routes.rb`.
+
+```ruby
+Rails.application.routes.draw do
+  namespace :api do
+    namespace :v1 do
+      resources :api_keys, path: '/api-keys', only: [:index, :create, :destroy]
+      resources :second_factors, path: 'second-factors'
+    end
+  end
+end
+```
+
+Create our `SecondFactorsController` in `app/controllers/api/v1.second_factors_controller.rb`.
+
+```ruby
+class Api::V1::SecondFactorsController < Api::ApiBaseController
+  include ApiKeyAuthenticatable
+
+  OTP_INVALID_MSG = 'second factor must be valid'
+  PWD_INVALID_MSG = 'password must be valid'
+
+  prepend_before_action :authenticate_with_api_key!
+
+  def index; end
+
+  def show; end
+
+  def create
+    second_factor = current_bearer.second_factors.new
+
+    # Verify second factor if enabled, otherwise verify password.
+    if current_bearer.second_factor_enabled?
+      result = current_bearer.authenticate_with_second_factor(otp: params[:otp])
+      raise(
+          UnauthorizedRequestError,
+          message: OTP_INVALID_MSG,
+          code: 'OTP_INVALID'
+      ) unless result
+    else
+      result = current_bearer.authenticate(params[:password])
+      raise(
+        UnauthorizedRequestError,
+        message: PWD_INVALID_MSG,
+        code: 'PWD_INVALID'
+      ) unless result
+    end
+
+    second_factor.save!
+
+    render json: SecondFactorResource.new(second_factor), status: :created
+  end
+
+  def update; end
+
+  def destroy; end
+end
+```
+
+Let's start with the create part in CRUD. Our create method is going to initialize a new second factor for the user, and then either verify the user's current second factor, or verify their password, before saving the second factor to the database.
+
+Before we test it out, we're going to need to add a couple methods to our `User` model.
+
+```ruby
+class User < ApplicationRecord
+
+  ...
+
+  def second_factor_enabled?
+    second_factors.enabled.any?
+  end
+
+  def authenticate_with_second_factor(otp:)
+    return false unless second_factor_enabled?
+
+    # We only allow a single 2FA key right now but we may allow more later,
+    # e.g. multiple 2FA keys, backup codes or U2F.
+    second_factor = second_factors.enabled.first
+
+    second_factor.verify_with_otp(otp)
+  end
+end
+```
+
+The first method will be used to check if the user has a second factor enabled, and the second method will let us authenticate a user's enabled second factor. To test it out, we'll go ahead and generate an API key so we can make a few subsequent requests.
+
+```json
+curl -X POST http://localhost:3333/api/v1/api-keys -u foo@woohoo.com:topsecret | json_pp
+
+{
+   "bearer_id" : 1,
+   "bearer_type" : "User",
+   "created_at" : "2022-07-22T14:17:00.884Z",
+   "id" : 4,
+   "token" : "079ce807b0736d5aefa345754c889c71",
+   "updated_at" : "2022-07-22T14:17:00.884Z"
+}
+```
+
+The [`json_pp` gem](https://rubygems.org/gems/json_pp/versions/0.0.1) I use for formatting json.
+
+Next, let's use that `token` to add a second factor for the current_user.  The `Api::V1::SecondFactorsController`  requires a password if a second factor has not been added yet.  We adjust our request to inclue the user's `password`.
+
+```json
+curl -X POST http://localhost:3333/api/v1/second-factors \
+     -H 'Authorization: Bearer 079ce807b0736d5aefa345754c889c71' \
+     -d password=topsecret | json_pp
+
+{
+   "created_at" : "2022-07-22T14:36:04.493Z",
+   "enabled" : false,
+   "id" : 3,
+   "otp_secret" : "JKTBAJX7UMWMMO5KEQ75ENGMIVSUJMHG",
+   "updated_at" : "2022-07-22T14:36:04.493Z",
+   "user_id" : 1
+}
+```
+
+Kabam!  Notice the `otp_secret`.  Now we need to get that value into our TOTP authenticator app.  Most authenticator apps will let you input the secret by hand but that's error prone and a terrible user-experience.  Instead what we can do is utilize a QR code drawing lib to render the `otp_secret` client-side, which can be scanned and stored in the TOTP auth app.
 
 
 
 
 
+
+### Ruby Fun
+
+```ruby
+# some_string = "This is my stance, but it's not a good one."
+# transformed = "sihT si ym ecnats, tub s'ti ton a doog eno."
+#
+# got = some_string.split.map { |i| i.gsub(/[a-zA-Z']+/, &:reverse) }.join(' ')
+#
+# got == transformed
+```
