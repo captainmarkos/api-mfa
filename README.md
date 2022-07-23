@@ -1,8 +1,8 @@
-## API Auth Key with 2FA
+## API Auth Keys with 2FA
 
 In **[API Auth Keys with Rails](README-part-1.md)** we implement API key authentication without using Devise.  This part for API auth keys with 2FA builds on the former.
 
-Here we are going to add 2FA into the app authentication flow.  This should cover how to implement a flexible second factor model which can be extended to support other types of second factors such as backup codes and U2F hardwardware keys.
+Here we are going to add 2FA into the app authentication flow.  This should cover how to implement a flexible second factor model which can be extended to support other types of second factors such as backup codes and U2F hardware keys.
 
 - [Before Getting Started](#before-getting-started)
 - [Creating a Second Factor Table](#creating-a-second-factor-table)
@@ -14,14 +14,15 @@ Here we are going to add 2FA into the app authentication flow.  This should cove
 
 Let's start off with some definitions which most are obvious but no assumptions.
 
-- 2FA : 2 Factor Authentication
+- 2FA : 2nd Factor Authentication
 - MFA : Multi Factor Authentication
+- U2F : Universal 2nd Factor 
 - OTP : One Time Password
 - TOTP : Time-based One Time Password
 - ROTP : Ruby One Time Password - [https://github.com/mdp/rotp](https://github.com/mdp/rotp)
 
 
-Next let's add api versioning to our app.  The directory structure change is the following
+Let's add api versioning to our app.  The directory structure change is the following
 
 ```bash
 # create directories

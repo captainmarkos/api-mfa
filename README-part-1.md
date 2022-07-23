@@ -14,6 +14,7 @@ In this part we implement API key authentication without using Devise.  When it 
 - [Listing API Keys](#listing-api-keys)
 - [Revoking API Keys](#revoking-api-keys)
 - [Patching Vulnerabilities](#patching-vulnerabilities)
+- [Add 2nd Factor Authentication](#add-2nd-factor-authentication)
 
 
 ### Create App and Setup
@@ -777,3 +778,6 @@ Some people may raise concern that we're "rolling our own auth" here, but that's
 This is my implementation based (closely) off of [this tutorial](https://keygen.sh/blog/how-to-implement-api-key-authentication-in-rails-without-devise/).  All the credit goes to that author.  This was for my fun and deeper diving into the topic.  Many thanks for this tutorial!
 
 
+### Add 2nd Factor Authentication
+
+The next part of this, which builds upon this, is to implement [API Auth Keys with 2FA](README.md).
