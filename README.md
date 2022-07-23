@@ -1078,6 +1078,66 @@ curl -X POST http://localhost:3333/api/v1/second-factors \
 Kabam!  Notice the `otp_secret`.  Now we need to get that value into our TOTP authenticator app.  Most authenticator apps will let you input the secret by hand but that's error prone and a terrible user-experience.  Instead what we can do is utilize a QR code drawing lib to render the `otp_secret` client-side, which can be scanned and stored in the TOTP auth app.
 
 
+It just so happens that I already use [Authy](https://authy.com/) so we'll go with that.  There's mobile and desktop versions of the app.
+
+But we can't just send the raw `otp_secret` to the client — QR code scanners don't understand random strings.
+
+We'll actually need to generate a `"provisioning URI"`, which is a format QR code scanners can understand. Let's adjust our SecondFactor model to do so.
+
+```ruby
+class SecondFactor < ApplicationRecord
+  ...
+
+  def provisioning_uri
+    return if enabled?
+
+    totp = ROTP::TOTP.new(opt_secret, issuer: OTP_ISSUER)
+    totp.provisioning_uri(user.email)
+  end
+
+  ...
+end
+```
+
+Checkout [ROTP::TOTP#provisioning_uri](https://github.com/mdp/rotp#generating-qr-codes-for-provisioning-mobile-apps)
+
+Now we can send that `provisioning_uri` to the client, instead of the `otp_secret`.  Then we'll use that value within a QR code rendering component.
+
+Run this in the console to get a `provisioning_uri`.
+```ruby
+[1] pry(main)> totp = ROTP::TOTP.new(SecureRandom.hex, issuer: "Bob Marley")
+=> #<ROTP::TOTP:0x0000000112322d38
+ @digest="sha1",
+ @digits=6,
+ @interval=30,
+ @issuer="Bob Marley",
+ @secret="5987db791fdbd076b49be4b120d6534b">
+
+[3] pry(main)> totp.provisioning_uri('bob@gmail.com')
+=> "otpauth://totp/Bob%20Marley:bob%40gmail.com?secret=5987db791fdbd076b49be4b120d6534b&issuer=Bob%20Marley"
+```
+
+Install `qrencode`
+
+```bash
+brew install qrencode
+```
+
+Using the `provisioning_uri` from the rails console above we can create a QR code.
+
+```bash
+qrencode -o QR_CODE_IMAGE.png -d 300 -s 8 "otpauth://totp/Bob%20Marley:bob%40gmail.com?secret=5987db791fdbd076b49be4b120d6534b&issuer=Bob%20Marley"
+```
+
+![](QR_CODE_IMAGE.png?raw=true)
+
+
+
+
+
+
+
+
 
 
 

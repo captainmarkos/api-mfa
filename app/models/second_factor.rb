@@ -9,6 +9,13 @@ class SecondFactor < ApplicationRecord
 
   scope :enabled, -> { where(enabled: true) }
 
+  def provisioning_uri
+    return if enabled?
+
+    totp = ROTP::TOTP.new(opt_secret, issuer: OTP_ISSUER)
+    totp.provisioning_uri(user.email)
+  end
+
   def verify_with_otp(otp)
     # Time-based One Time Password
     totp = ROTP::TOTP.new(otp_secret, issuer: OTP_ISSUER)
