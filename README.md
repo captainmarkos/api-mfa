@@ -8,6 +8,7 @@ Here we are going to add 2FA into the app authentication flow.  This should cove
 - [Creating a Second Factor Table](#creating-a-second-factor-table)
 - [Managing Second Factors](#managing-second-factors)
 - [Generate Provisioning URI](#generate-provisioning-uri)
+- [Adjusting the Auth Flow](#adjusting-the-auth-flow)
 
 
 ### Before Getting Started
@@ -313,7 +314,7 @@ But we can't just send the raw `otp_secret` to the client — QR code scanners d
 
 ### Generate Provisioning URI
 
-We need to generate a `"provisioning URI"`, which is a format QR code scanners can understand. Let's adjust our SecondFactor model to do so.
+We need to generate a `"provisioning URI"`, which is a format QR code scanners can understand. Let's adjust our `SecondFactor` model to do so.
 
 ```ruby
 class SecondFactor < ApplicationRecord
@@ -363,23 +364,8 @@ qrencode -o QR_CODE_IMAGE.png -d 300 -s 8 "otpauth://totp/Bob%20Marley:bob%40gma
 ![](QR_CODE_IMAGE.png?raw=true)
 
 
+### Adjusting the Auth Flow
 
 
 
 
-
-
-
-
-
-
-### Ruby Fun
-
-```ruby
-some_string = "This is my stance, but it's not a good one."
-transformed = "sihT si ym ecnats, tub s'ti ton a doog eno."
-
-got = some_string.split.map { |i| i.gsub(/[a-zA-Z']+/, &:reverse) }.join(' ')
-
-got == transformed
-```
