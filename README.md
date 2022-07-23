@@ -1,6 +1,6 @@
 ## API Auth Key with 2FA
 
-In **[API Auth Keys with Rails](README-part-1.md)** we implement API key authentication without using Devise.  This part for API auth keys with 2FA builds on the former.
+In **[API Auth Keys with Rails](README-part-1.md)** we implement API key authentication without using Devise.  This part for **API Auth Keys with 2FA** builds on the former.
 
 Here we are going to add 2FA into the app authentication flow.  This should cover how to implement a flexible second factor model which can be extended to support other types of second factors such as backup codes and U2F hardwardware keys.
 
