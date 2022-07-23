@@ -19,6 +19,7 @@
 - [Before Getting Started](#before-getting-started)
 - [Creating a Second Factor Table](#creating-a-second-factor-table)
 - [Managing Second Factors](#managing-second-factors)
+- [Generate Provisioning URI](#generate-provisioning-uri)
 
 ### Create App and Setup
 
@@ -1058,7 +1059,7 @@ curl -X POST http://localhost:3333/api/v1/api-keys -u foo@woohoo.com:topsecret |
 
 The [`json_pp` gem](https://rubygems.org/gems/json_pp/versions/0.0.1) I use for formatting json.
 
-Next, let's use that `token` to add a second factor for the current_user.  The `Api::V1::SecondFactorsController`  requires a password if a second factor has not been added yet.  We adjust our request to inclue the user's `password`.
+Next, let's use that `token` from the above curl to add a second factor for the current user.  The `Api::V1::SecondFactorsController` requires a password if a second factor has not been added yet.  We adjust our request to include the user's `password`.
 
 ```bash
 curl -X POST http://localhost:3333/api/v1/second-factors \
@@ -1082,7 +1083,10 @@ It just so happens that I already use [Authy](https://authy.com/) so we'll go wi
 
 But we can't just send the raw `otp_secret` to the client — QR code scanners don't understand random strings.
 
-We'll actually need to generate a `"provisioning URI"`, which is a format QR code scanners can understand. Let's adjust our SecondFactor model to do so.
+
+### Generate Provisioning URI
+
+We need to generate a `"provisioning URI"`, which is a format QR code scanners can understand. Let's adjust our SecondFactor model to do so.
 
 ```ruby
 class SecondFactor < ApplicationRecord
