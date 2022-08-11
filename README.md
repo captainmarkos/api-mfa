@@ -1,6 +1,6 @@
 ## API Auth Keys with 2FA
 
-In **[API Auth Keys with Rails](README-part-1.md)** we implement API key authentication without using Devise.  This part for API auth keys with 2FA builds on the former.
+In **[API Auth Keys with Rails](README-part-1.md)** we implement API key authentication without using Devise.  This part for API auth keys with 2FA builds on that.
 
 Here we are going to add 2FA into the app authentication flow.  This should cover how to implement a flexible second factor model which can be extended to support other types of second factors such as backup codes and U2F hardware keys.
 
@@ -365,6 +365,64 @@ qrencode -o QR_CODE_IMAGE.png -d 300 -s 8 "otpauth://totp/Bob%20Marley:bob%40gma
 
 
 ### Adjusting the Auth Flow
+
+Next, we're going to want to update our authentication flow to verify a user's second factor. In our case, our only authentication endpoint is the one where you generate a new API key, covered in [Part 1](README-part-1.md).
+
+Let's edit the `ApiKeysController` and verify the user's second factor.
+
+```ruby
+class Api::V1::ApiKeysController < Api::ApiBaseController
+  ...
+
+  def create
+    authenticate_with_http_basic do |email, password|
+      user = User.find_by(email: email)
+
+      # Request or verify the user's 2nd factor if enabled.
+      if user&.second_factor_enabled?
+        otp = params[:otp]
+        second_factor_missing if otp.blank?
+
+        verified = user.authenticate_with_second_factor(otp: otp)
+        second_factor_invalid unless verified
+      end
+
+      if user&.authenticate(password)
+        api_key = user.api_keys.create!(token: SecureRandom.hex)
+        render json: api_key, status: :created and return
+      end
+    end
+
+    render status: :unauthorized
+  end
+
+  ...
+
+  private
+
+  def second_factor_missing
+    raise(
+      UnauthorizedRequestError,
+      message: 'second factor is required',
+      code 'OTP_REQUIRED'
+    )
+  end
+
+  def second_factor_invalid
+    raise(
+      UnauthorizedRequestError,
+      message: 'second factor is invalid',
+      code: 'OTP_INVALID'
+    )
+  end
+end
+```
+
+A couple assertions were added to the auth flow:
+  1. when the user has a second factor, we assert that an `otp` param be provied.
+  2. when the user has a second factor, we assert that the `otp` param is verified.
+
+We have two separate steps for this to make things easier on the front-end.  By sending 2 different error codes, one for when the OTP is required by missing, and one where the OTP was provided but invalid, allows us to adjust our login UI accordingly.
 
 
 
