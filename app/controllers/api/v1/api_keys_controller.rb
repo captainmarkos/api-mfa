@@ -1,6 +1,4 @@
 class Api::V1::ApiKeysController < Api::ApiBaseController
-  include ApiKeyAuthenticatable
-
   # Require API key authentication
   prepend_before_action :authenticate_with_api_key!, only: [:index, :destroy]
 
@@ -15,10 +13,10 @@ class Api::V1::ApiKeysController < Api::ApiBaseController
       # Request or verify the user's 2nd factor if enabled.
       if user&.second_factor_enabled?
         otp = params[:otp]
-        second_factor_missing if otp.blank?
+        otp_required if otp.blank?
 
         verified = user.authenticate_with_second_factor(otp: otp)
-        second_factor_invalid unless verified
+        otp_invalid unless verified
       end
 
       if user&.authenticate(password)
@@ -43,23 +41,5 @@ class Api::V1::ApiKeysController < Api::ApiBaseController
       status: "failed to delete id #{params[:id]}",
       message: "#{e.message}"
     }
-  end
-
-  private
-
-  def second_factor_missing
-    raise(
-      UnauthorizedRequestError,
-      message: 'second factor is required',
-      code 'OTP_REQUIRED'
-    )
-  end
-
-  def second_factor_invalid
-    raise(
-      UnauthorizedRequestError,
-      message: 'second factor is invalid',
-      code: 'OTP_INVALID'
-    )
   end
 end

@@ -1,9 +1,4 @@
 class Api::V1::SecondFactorsController < Api::ApiBaseController
-  include ApiKeyAuthenticatable
-
-  MFA_INVALID_MSG = 'second factor must be valid'
-  PWD_INVALID_MSG = 'password must be valid'
-
   prepend_before_action :authenticate_with_api_key!
 
   def index; end
@@ -16,18 +11,10 @@ class Api::V1::SecondFactorsController < Api::ApiBaseController
     # Verify second factor if enabled, otherwise verify password.
     if current_bearer.second_factor_enabled?
       result = current_bearer.authenticate_with_second_factor(otp: params[:otp])
-      raise(
-          UnauthorizedRequestError,
-          message: MFA_INVALID_MSG,
-          code: 'MFA_INVALID'
-      ) unless result.present?
+      mfa_invalid if result.blank?
     else
       result = current_bearer.authenticate(params[:password])
-      raise(
-        UnauthorizedRequestError,
-        message: PWD_INVALID_MSG,
-        code: 'PWD_INVALID'
-      ) if result.blank?
+      password_invalid if result.blank?
     end
 
     second_factor.save!
@@ -35,7 +22,16 @@ class Api::V1::SecondFactorsController < Api::ApiBaseController
     render json: second_factor, status: :created
   end
 
-  def update; end
+  def update
+    second_factor = current_bearer.second_factors.find(params[:id])
+
+    # Verify this particular 2nd factor (which may not be enabled yet).
+    otp_invalid unless second_factor.verify_with_otp(params[:otp])
+
+    second_factor.update!(enabled: params[:enabled])
+
+    render json: second_factor, status: :ok
+  end
 
   def destroy; end
 end

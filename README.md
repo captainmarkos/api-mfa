@@ -35,18 +35,39 @@ mv app/controllers/api_keys_controller.rb app/controllers/api/v1/
 
 ```
 
+
 Create a new file `app/controllers/api/api_base_controller.rb` and make it look like
 
 ```ruby
 class Api::ApiBaseController < ApplicationController
+  include ApiKeyAuthenticatable
+
+  class UnauthorizedRequestError < StandardError
+    attr_reader :code
+
+    def initialize(message:, code: nil)
+      @code = code
+
+      super(message)
+    end
+  end
+
+  rescue_from ActiveRecord::RecordInvalid, with: -> { render status: :unprocessable_entity }
+  rescue_from ActiveRecord::RecordNotUnique, with: -> { render status: :conflict }
+  rescue_from ActiveRecord::RecordNotFound, with: -> { render status: :not_found }
+
+  rescue_from UnauthorizedRequestError do |e|
+    error = { message: e.message, code: e.code }
+
+    render json: { error: error }, status: :unauthorized
+  end
 end
 ```
 
-Edit `app/controllers/api/v1/api_keys_controller.rb` to have
+Edit `app/controllers/api/v1/api_keys_controller.rb` to inherit from the new `ApiBaseController`.
 
 ```ruby
 class Api::V1::ApiKeysController < Api::ApiBaseController
-  include ApiKeyAuthenticatable
 
   ...
 
@@ -203,8 +224,6 @@ Create our `SecondFactorsController` in `app/controllers/api/v1.second_factors_c
 
 ```ruby
 class Api::V1::SecondFactorsController < Api::ApiBaseController
-  include ApiKeyAuthenticatable
-
   OTP_INVALID_MSG = 'second factor must be valid'
   PWD_INVALID_MSG = 'password must be valid'
 
@@ -221,22 +240,24 @@ class Api::V1::SecondFactorsController < Api::ApiBaseController
     if current_bearer.second_factor_enabled?
       result = current_bearer.authenticate_with_second_factor(otp: params[:otp])
       raise(
-          UnauthorizedRequestError,
+        UnauthorizedRequestError.new(
           message: OTP_INVALID_MSG,
           code: 'OTP_INVALID'
+        )
       ) unless result
     else
       result = current_bearer.authenticate(params[:password])
       raise(
-        UnauthorizedRequestError,
-        message: PWD_INVALID_MSG,
-        code: 'PWD_INVALID'
+        UnauthorizedRequestError.new(
+          message: PWD_INVALID_MSG,
+          code: 'PWD_INVALID'
+        )
       ) unless result
     end
 
     second_factor.save!
 
-    render json: SecondFactorResource.new(second_factor), status: :created
+    render json: second_factor, status: :created
   end
 
   def update; end
@@ -402,17 +423,19 @@ class Api::V1::ApiKeysController < Api::ApiBaseController
 
   def second_factor_missing
     raise(
-      UnauthorizedRequestError,
-      message: 'second factor is required',
-      code 'OTP_REQUIRED'
+      UnauthorizedRequestError.new(
+        message: 'second factor is required',
+        code 'OTP_REQUIRED'
+      )
     )
   end
 
   def second_factor_invalid
     raise(
-      UnauthorizedRequestError,
-      message: 'second factor is invalid',
-      code: 'OTP_INVALID'
+      UnauthorizedRequestError.new(
+        message: 'second factor is invalid',
+        code: 'OTP_INVALID'
+      )
     )
   end
 end
@@ -425,5 +448,157 @@ A couple assertions were added to the auth flow:
 We have two separate steps for this to make things easier on the front-end.  By sending 2 different error codes, one for when the OTP is required by missing, and one where the OTP was provided but invalid, allows us to adjust our login UI accordingly.
 
 
+Let's check it out:
 
+```bash
+curl -X POST http://localhost:3333/api/v1/api-keys -u foo@woohoo.com:topsecret | json_pp
+
+{
+   "bearer_id" : 1,
+   "bearer_type" : "User",
+   "created_at" : "2022-08-13T12:23:37.194Z",
+   "id" : 7,
+   "token" : "78029054cf1b11c7dbe184b8184a6f67",
+   "updated_at" : "2022-08-13T12:23:37.194Z"
+}
+```
+
+Wait a minute, shouldn't we have been prompted for a second factor?  Well, no, we don't have our second factor enabled yet.
+
+Let's open up the `SecondFactorsController` and work on the `#update` method.
+
+```ruby
+class Api::V1::SecondFactorsController < Api::ApiBaseController
+  MFA_INVALID_MSG = 'second factor must be valid'
+  PWD_INVALID_MSG = 'password must be valid'
+
+  ...
+
+  def update
+    second_factor = current_bearer.second_factors.find(params[:id])
+
+    # Verify this particular 2nd factor (which may not be enabled yet).
+    raise(
+      UnauthorizedRequestError.new(
+        message: MFA_INVALID_MSG,
+        code: 'OTP_INVALID'
+      )
+    ) unless second_factor.verify_with_otp(params[:otp])
+
+    second_factor.update!(enabled: params[:enabled])
+
+    render json: second_factor, status: :ok
+  end
+
+  ...
+end
+```
+
+
+Here, we're verifying the current second factor using an OTP, to assert that the end-user has correctly set up their authenticator app. To test, we'll want to send a PATCH request to update our second factor's enabled attribute.
+
+```bash
+# Create an auth token if necessary:
+curl -v -X POST http://localhost:3333/api/v1/api-keys -u foo@woohoo.com:topsecret
+
+{
+   "bearer_id" : 1,
+   "bearer_type" : "User",
+   "created_at" : "2022-08-19T15:14:19.724Z",
+   "id" : 9,
+   "token" : "4cacf5338d50a9c640dbed74f2525ea4",
+   "updated_at" : "2022-08-19T15:14:19.724Z"
+}
+
+# Enable MFA
+curl -X PATCH http://localhost:3333/api/v1/second-factors/1 \
+     -H 'Authorization: Bearer 4cacf5338d50a9c640dbed74f2525ea4' \
+     -d enabled=1
+
+{
+   "error" : {
+      "code" : "OTP_INVALID",
+      "message" : "second factor must be valid"
+   }
+}
+```
+
+Well, that didn't work. It didn't work because our `#update` requires us to send an OTP, in order to verify that we correctly set up our second factor within an authenticator app.  Because remember, once this second factor is enabled, the user will not be able to authenticate without an OTP moving forward.  So if things are not set up correctly, then the user gets locked out of their account.
+
+To test, you can go ahead and take this time to render the provisioning URI into a QR code and scan it with your authenticator app if that works for you, but for the sake of time, let's use the Rails console instead.
+
+```ruby
+> s = SecondFactor.first
+> totp = ROTP::TOTP.new(s.otp_secret)
+> totp.now
+=> "666127"
+```
+
+Now, anytime we want a new OTP, we can call totp.now in our Rails console. But we have to be quick! The OTPs only last for about 30 seconds.
+
+So let's try again, but with an OTP this time.
+
+```bash
+curl -X PATCH http://localhost:3333/api/v1/second-factors/1 \
+     -H 'Authorization: Bearer 4cacf5338d50a9c640dbed74f2525ea4' \
+     -d enabled=1 \
+     -d otp=666127
+
+{
+   "created_at" : "2022-07-22T14:22:26.052Z",
+   "enabled" : true,
+   "id" : 1,
+   "otp_secret" : "G2OTDGZHNXJR44OF5HV4QUW4L3KV2X5A",
+   "updated_at" : "2022-08-19T17:39:17.907Z",
+   "user_id" : 1
+}
+```
+
+We can see the enabled attribute is now `true`, so let's go ahead and try authenticating one more time.
+
+```bash
+curl -v -X POST http://localhost:3333/api/v1/api-keys -u foo@woohoo.com:topsecret
+
+< HTTP/1.1 401 Unauthorized
+{
+   "error" : {
+      "code" : "OTP_REQUIRED",
+      "message" : "one time password is required"
+   }
+}
+```
+
+Great, we got the expected OTP_REQUIRED code! But now what happens when we provide an invalid OTP?
+
+```bash
+curl -X POST http://localhost:3333/api/v1/api-keys \
+     -u foo@woohoo.com:topsecret \
+     -d otp=000000
+
+{
+   "error" : {
+      "code" : "OTP_INVALID",
+      "message" : "one time password is invalid"
+   }
+}
+```
+
+KABAM!  Just what we expected, our `OTP_INVALID` code.  And lastly, what happens when we provide a valid OTP?  If the rails console is still up we can run `totp.now` and get the new otp.
+
+```bash
+curl -X POST http://localhost:3333/api/v1/api-keys \
+     -u foo@woohoo.com:topsecret \
+     -d otp=970865
+
+{
+   "bearer_id" : 1,
+   "bearer_type" : "User",
+   "created_at" : "2022-08-19T17:48:42.548Z",
+   "id" : 10,
+   "token" : "11e573aaac339b46fd918222883c9131",
+   "updated_at" : "2022-08-19T17:48:42.548Z"
+}
+```
+
+Success!  We've successfully implemented TOTP 2FA verification into our app's normal authentication flow. This is great because not only is TOTP 2FA free, but it's more secure than SMS 2FA.
 
