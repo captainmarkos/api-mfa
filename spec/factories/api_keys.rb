@@ -3,7 +3,7 @@ FactoryBot.define do
     token_digest { SecureRandom.hex }
 
     transient do
-     bearer { create(:user) }
+      bearer { create(:user) }
     end
 
     bearer_id { bearer.id }

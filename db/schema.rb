@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.0].define(version: 2022_07_17_200348) do
+ActiveRecord::Schema[7.0].define(version: 2022_08_20_135808) do
   create_table "api_keys", force: :cascade do |t|
     t.string "bearer_type"
     t.integer "bearer_id"
@@ -27,6 +27,7 @@ ActiveRecord::Schema[7.0].define(version: 2022_07_17_200348) do
     t.boolean "enabled", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "otp_verified_at"
     t.index ["otp_secret"], name: "index_second_factors_on_otp_secret", unique: true
     t.index ["user_id"], name: "index_second_factors_on_user_id"
   end

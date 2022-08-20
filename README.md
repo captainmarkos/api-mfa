@@ -9,6 +9,9 @@ Here we are going to add 2FA into the app authentication flow.  This should cove
 - [Managing Second Factors](#managing-second-factors)
 - [Generate Provisioning URI](#generate-provisioning-uri)
 - [Adjusting the Auth Flow](#adjusting-the-auth-flow)
+- [Fixing a Vulnerability](#fixing-a-vulnerability)
+- [Refactoring Notes](#refactoring-notes)
+- [Credit](#credit)
 
 
 ### Before Getting Started
@@ -42,16 +45,6 @@ Create a new file `app/controllers/api/api_base_controller.rb` and make it look 
 class Api::ApiBaseController < ApplicationController
   include ApiKeyAuthenticatable
 
-  class UnauthorizedRequestError < StandardError
-    attr_reader :code
-
-    def initialize(message:, code: nil)
-      @code = code
-
-      super(message)
-    end
-  end
-
   rescue_from ActiveRecord::RecordInvalid, with: -> { render status: :unprocessable_entity }
   rescue_from ActiveRecord::RecordNotUnique, with: -> { render status: :conflict }
   rescue_from ActiveRecord::RecordNotFound, with: -> { render status: :not_found }
@@ -60,6 +53,20 @@ class Api::ApiBaseController < ApplicationController
     error = { message: e.message, code: e.code }
 
     render json: { error: error }, status: :unauthorized
+  end
+end
+```
+
+Create and add to `app/lib/unauthorized_request_error.rb`.
+
+```ruby
+class UnauthorizedRequestError < StandardError
+  attr_reader :code
+
+  def initialize(message:, code: nil)
+    @code = code
+
+    super(message)
   end
 end
 ```
@@ -344,7 +351,7 @@ class SecondFactor < ApplicationRecord
   def provisioning_uri
     return if enabled?
 
-    totp = ROTP::TOTP.new(opt_secret, issuer: OTP_ISSUER)
+    totp = ROTP::TOTP.new(otp_secret, issuer: OTP_ISSUER)
     totp.provisioning_uri(user.email)
   end
 
@@ -602,3 +609,58 @@ curl -X POST http://localhost:3333/api/v1/api-keys \
 
 Success!  We've successfully implemented TOTP 2FA verification into our app's normal authentication flow. This is great because not only is TOTP 2FA free, but it's more secure than SMS 2FA.
 
+
+### Fixing a Vulnerability
+
+Before we close, we need to resolve a vulnerability in our OTP implementation. Right now, OTP tokens can be reused. We need to ensure that OTPs (one-time-passwords) are actually, as the name would suggest, one-time passwords.
+
+
+To do so, we'll need to add a new column to our `second_factors` table, create the migration and apply.
+
+```bash
+bin/rails generate migration AddOtpVerifiedAtToSecondFactors
+```
+
+```ruby
+class AddOtpVerifiedAtToSecondFactors < ActiveRecord::Migration[7.0]
+  def change
+    add_column :second_factors, :otp_verified_at, :datetime, null: true
+  end
+end
+```
+
+Lastly, we'll want to adjust our OTP verification method to utilize the otp_verified_at column, and also automatically update it when a successful verification occurs.  Edit the `SecondFactor` model method `#verify_with_otp`.
+
+```ruby
+class SecondFactor < ApplicationRecord
+  ...
+
+  def verify_with_otp(otp)
+    # Time-based One Time Password
+    totp = ROTP::TOTP.new(otp_secret, issuer: OTP_ISSUER)
+
+    ts = totp.verify(otp.to_s, after: otp_verified_at.to_i)
+    update(otp_verified_at: Time.at(ts)) if ts.present?
+
+    ts
+  end
+
+  ...
+end
+```
+
+### TODO
+
+- A `User` can have many `second_factors` so the name is a little awkward to me.  Rename the `SecondFactor` model to `MultiFactorAuth`, associated table `second_factors` -> `multi_factor_auths`, controller and other refrences to the `second_factor` term.  Now it would be said that "a `User` `has_many :multi_factor_auths`".
+
+- Add appropriate tests.
+
+
+### Refactoring Notes
+
+Looking at the code as compared to this README there will be some discrepencies.  I've refactored some things along the way.  One thing, I don't like is the model name "`SecondFactor`" and other references to the term "second factor".  I think the proper name should be "multi factor" or "multi factor auth" or something but remove the "second" part of the name.  I may change it after writing this README... I may not.
+
+
+### Credit
+
+I did not create this tuturial.  I followed and did my own personal deep dive into this tutuorial [here](https://keygen.sh/blog/how-to-implement-totp-2fa-in-rails-using-rotp/) so all credit goes there.

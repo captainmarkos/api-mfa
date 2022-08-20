@@ -12,7 +12,7 @@ class SecondFactor < ApplicationRecord
   def provisioning_uri
     return if enabled?
 
-    totp = ROTP::TOTP.new(opt_secret, issuer: OTP_ISSUER)
+    totp = ROTP::TOTP.new(otp_secret, issuer: OTP_ISSUER)
     totp.provisioning_uri(user.email)
   end
 
@@ -20,7 +20,10 @@ class SecondFactor < ApplicationRecord
     # Time-based One Time Password
     totp = ROTP::TOTP.new(otp_secret, issuer: OTP_ISSUER)
 
-    totp.verify(otp.to_s)
+    ts = totp.verify(otp.to_s, after: otp_verified_at.to_i)
+    update(otp_verified_at: Time.at(ts)) if ts.present?
+
+    ts
   end
 
   private
